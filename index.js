@@ -112,10 +112,11 @@ async function run() {
       verifyAdmin,
       async (req, res) => {
         const id = req.params.id;
+        const user = req.body;
         const filter = { _id: new ObjectId(id) };
         const updateDoc = {
           $set: {
-            role: "admin",
+            role: user.role,
           },
         };
         const result = await usersCollection.updateOne(filter, updateDoc);
@@ -288,18 +289,7 @@ async function run() {
       res.send({ users, menuItems, orders, totalRevenue });
     });
 
-    /**
-     * Order status
-     * ------------------------------
-     * Non-Efficient way
-     * ------------------------------
-     * 1. Load all the payments
-     * 2. For every manyItemsId (which is an array ) , go find the item form menuCollection
-     * 3. For every item in the menuCollection the you found from the payment entry (document)
-     */
-
-    // Using  aggregate pipeline
-    app.get("/order_stats", verifyToken, verifyAdmin, async (req, res) => {
+    app.get("/order_stats", async (req, res) => {
       const result = await paymentCollection
         .aggregate([
           { $unwind: "$menuItemIds" },
