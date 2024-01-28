@@ -13,7 +13,18 @@ const mg = mailgun.client({
 });
 
 // middleware
-app.use(cors());
+// app.use(cors());
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5173",
+      "http://localhost:5174",
+      "https://poco-restaurant.web.app",
+    ],
+    credentials: true,
+  })
+);
+
 app.use(express.json());
 
 //STRIPE_TEST_SECRET_KEY
@@ -85,6 +96,27 @@ async function run() {
     // users related api
 
     app.get("/users", verifyToken, verifyAdmin, async (req, res) => {
+      const result = await usersCollection.find().toArray();
+      res.send(result);
+    });
+    app.get("/orders", verifyToken, verifyAdmin, async (req, res) => {
+      const result = await paymentCollection.find().toArray();
+      res.send(result);
+    });
+    app.put("/orders/:id", verifyToken, verifyAdmin, async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+      const updateDoc = {
+        $set: {
+          status: "Delivered",
+        },
+      };
+
+      const result = await paymentCollection.updateOne(filter, updateDoc);
+      res.send(result);
+    });
+
+    app.get("/role", async (req, res) => {
       const result = await usersCollection.find().toArray();
       res.send(result);
     });
@@ -234,30 +266,14 @@ async function run() {
     app.post("/payments", async (req, res) => {
       const payment = req.body;
       const paymentResult = await paymentCollection.insertOne(payment);
-
       //  carefully delete each item from the cart
       const query = {
         _id: {
           $in: payment.cartIds.map((id) => new ObjectId(id)),
         },
       };
-      c;
+
       const deleteResult = await cartCollection.deleteMany(query);
-      mg.messages
-        .create(process.env.MAIL_SENDING_DOMAIN, {
-          from: "Mailgun Sandbox <postmaster@sandbox15fbbe2cd5c5439e97ecebebab8af053.mailgun.org>",
-          to: ["arfathossen541@gmail.com"],
-          subject: "Bistro boss order confirmation",
-          // text: "Testing some Mailgun awesomness!",
-          html: `
-          <div>
-          <h2>Thank you for your order </h2>
-          <h4>Your Transaction ID: <strong>${payment.transactionId}</strong></h4>
-          <p>We would like to get your feedback about the food</p>
-          </div>`,
-        })
-        .then((msg) => console.log(msg))
-        .catch((err) => console.log(err));
 
       res.send({ paymentResult, deleteResult });
     });
@@ -329,9 +345,9 @@ async function run() {
 run().catch(console.dir);
 
 app.get("/", (req, res) => {
-  res.send("boss is sitting");
+  res.send("Poco Restaurant is sitting");
 });
 
 app.listen(port, () => {
-  console.log(`Bistro boss is sitting on port ${port}`);
+  console.log(`Poco Restaurant is sitting on port ${port}`);
 });
