@@ -52,6 +52,9 @@ async function run() {
     const cartCollection = client.db("bistroDb").collection("carts");
     const usersCollection = client.db("bistroDb").collection("users");
     const paymentCollection = client.db("bistroDb").collection("payments");
+    const reservationCollection = client
+      .db("bistroDb")
+      .collection("reservations");
 
     // jwt related api
     app.post("/jwt", (req, res) => {
@@ -219,6 +222,46 @@ async function run() {
       const result = await cartCollection.insertOne(item);
       res.send(result);
     });
+    app.post("/reservation", verifyToken, async (req, res) => {
+      const bookingData = req.body;
+      const result = await reservationCollection.insertOne(bookingData);
+      res.send(result);
+    });
+    app.get("/reservation/:email", verifyToken, async (req, res) => {
+      const email = req.params.email;
+      const query = { email: email };
+      const result = await reservationCollection.find(query).toArray();
+      res.send(result);
+    });
+
+    app.get(
+      "/manage-bookings/:email",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        const result = await reservationCollection.find().toArray();
+        res.send(result);
+      }
+    );
+
+    app.put(
+      "/manage-bookings/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const filter = { _id: new ObjectId(id) };
+        const status = req.body;
+        console.log(req);
+        const updateDoc = {
+          $set: {
+            status: status.status,
+          },
+        };
+        const result = await reservationCollection.updateOne(filter, updateDoc);
+        res.send(result);
+      }
+    );
 
     app.get("/carts", async (req, res) => {
       const email = req.query.email;
@@ -238,6 +281,11 @@ async function run() {
       res.send(result);
     });
 
+    app.post("/review", async (req, res) => {
+      const review = req.body;
+      const result = await reviewCollection.insertOne(review);
+      res.send(result);
+    });
     app.get("/reviews", async (req, res) => {
       const result = await reviewCollection.find().toArray();
       res.send(result);
@@ -269,7 +317,7 @@ async function run() {
     app.post("/payments", async (req, res) => {
       const payment = req.body;
       const paymentResult = await paymentCollection.insertOne(payment);
-      //  carefully delete each item from the cart
+
       const query = {
         _id: {
           $in: payment.cartIds.map((id) => new ObjectId(id)),
@@ -286,10 +334,6 @@ async function run() {
       const users = await usersCollection.estimatedDocumentCount();
       const menuItems = await menuCollection.estimatedDocumentCount();
       const orders = await paymentCollection.estimatedDocumentCount();
-
-      //this is not the best way.
-      // const payments = await paymentCollection.find().toArray();
-      // const revenue = payments.reduce((total, item) => total + item.price, 0);
 
       const result = await paymentCollection
         .aggregate([
