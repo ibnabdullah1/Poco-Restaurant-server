@@ -13,7 +13,6 @@ const mg = mailgun.client({
 });
 
 // middleware
-// app.use(cors());
 app.use(
   cors({
     origin: [
@@ -102,10 +101,12 @@ async function run() {
       const result = await usersCollection.find().toArray();
       res.send(result);
     });
+
     app.get("/orders", verifyToken, verifyAdmin, async (req, res) => {
       const result = await paymentCollection.find().toArray();
       res.send(result);
     });
+
     app.put("/orders/:id", verifyToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const filter = { _id: new ObjectId(id) };
@@ -131,6 +132,7 @@ async function run() {
       if (existingUser) {
         return res.send({ message: "user already exists", insertedId: null });
       }
+      console.log(user);
       const result = await usersCollection.insertOne(user);
       res.send(result);
     });
@@ -353,38 +355,101 @@ async function run() {
     });
 
     app.get("/order_stats", async (req, res) => {
-      const result = await paymentCollection
-        .aggregate([
-          { $unwind: "$menuItemIds" },
-          {
-            $lookup: {
-              from: "menu",
-              localField: "menuItemIds",
-              foreignField: "_id",
-              as: "menuItems",
-            },
-          },
-          { $unwind: "$menuItems" },
-          {
-            $group: {
-              _id: "$menuItems.category",
-              quantity: {
-                $sum: 1,
+      try {
+        const result = await paymentCollection
+          .aggregate([
+            { $unwind: "$menuItemIds" },
+            {
+              $lookup: {
+                from: "menu",
+                localField: "menuItemIds",
+                foreignField: "_id",
+                as: "menuItems",
               },
-              totalRevenue: { $sum: "$menuItems.price" },
             },
-          },
-          {
-            $project: {
-              _id: 0,
-              category: "$_id",
-              quantity: "$quantity",
-              totalRevenue: "$totalRevenue",
+            { $unwind: "$menuItems" },
+            {
+              $group: {
+                _id: "$menuItems.category",
+                quantity: {
+                  $sum: 1,
+                },
+                totalRevenue: { $sum: "$menuItems.price" },
+              },
             },
-          },
-        ])
-        .toArray();
-      res.send(result);
+            {
+              $project: {
+                _id: 0,
+                category: "$_id",
+                quantity: "$quantity",
+                totalRevenue: "$totalRevenue",
+              },
+            },
+          ])
+          .toArray();
+
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching order stats:", error);
+        res.status(500).send("Internal Server Error");
+      }
+    });
+    app.get("/top_sales_items", async (req, res) => {
+      try {
+        const menus = await menuCollection.find().toArray();
+        const result = await paymentCollection
+          .aggregate([
+            { $unwind: "$menuItemIds" },
+            {
+              $lookup: {
+                from: "menu",
+                let: { menuItemId: { $toObjectId: "$menuItemIds" } },
+                pipeline: [
+                  { $match: { $expr: { $eq: ["$_id", "$$menuItemId"] } } },
+                ],
+                as: "menuItems",
+              },
+            },
+            { $unwind: "$menuItems" },
+            {
+              $group: {
+                _id: "$menuItems._id",
+                itemName: { $first: "$menuItems.name" },
+                price: { $first: "$menuItems.price" },
+                quantitySold: { $sum: 1 },
+                totalRevenue: { $sum: "$menuItems.price" },
+              },
+            },
+            { $sort: { quantitySold: -1 } },
+            { $limit: 5 },
+            {
+              $project: {
+                _id: 0,
+                itemId: "$_id",
+                itemName: "$itemName",
+                price: "$price",
+                quantitySold: "$quantitySold",
+                totalRevenue: "$totalRevenue",
+              },
+            },
+          ])
+          .toArray();
+
+        const topSalesItems = result.map((item) => {
+          const menuItem = menus.find(
+            (menu) => menu._id.toString() === item.itemId.toString()
+          );
+          return {
+            ...item,
+            image: menuItem ? menuItem.image : null,
+          };
+        });
+
+        res.send(topSalesItems);
+      } catch (error) {
+        console.error("Error fetching top sales items:", error);
+        res.status(500).send("Internal Server Error");
+      }
     });
   } finally {
   }
